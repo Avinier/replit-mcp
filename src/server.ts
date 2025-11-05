@@ -11,8 +11,10 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import { authTools, authToolHandlers } from './tools/index.js';
-import { authResources, authResourceHandlers } from './resources/index.js';
+import { authTools, authToolHandlers } from './tools/auth.js';
+import { filesystemTools, filesystemToolHandlers } from './tools/filesystem.js';
+import { authResources, authResourceHandlers } from './resources/auth.js';
+import { filesystemResources, filesystemResourceHandlers } from './resources/filesystem.js';
 import { logger } from './utils/logger.js';
 
 /**
@@ -38,7 +40,7 @@ export async function createServer(): Promise<Server> {
   // Register tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: authTools.map(tool => ({
+      tools: [...authTools, ...filesystemTools].map(tool => ({
         name: tool.name,
         description: tool.description || '',
         inputSchema: tool.inputSchema
@@ -50,7 +52,7 @@ export async function createServer(): Promise<Server> {
     const toolName = request.params.name;
     const args = request.params.arguments || {};
 
-    const handler = authToolHandlers[toolName as keyof typeof authToolHandlers];
+    const handler = (authToolHandlers as any)[toolName] || (filesystemToolHandlers as any)[toolName];
     if (!handler) {
       throw new Error(`No handler found for tool: ${toolName}`);
     }
@@ -75,13 +77,27 @@ export async function createServer(): Promise<Server> {
   // Register resources
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
     return {
-      resources: authResources
+      resources: [...authResources, ...filesystemResources]
     };
   });
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request: any) => {
     const uri = request.params.uri;
-    const handler = authResourceHandlers[uri as keyof typeof authResourceHandlers];
+    const url = new URL(uri);
+
+    // Find the appropriate handler based on URI pattern
+    let handler = authResourceHandlers[uri as keyof typeof authResourceHandlers];
+
+    if (!handler) {
+      // Check filesystem resources with pattern matching
+      if (uri.startsWith('replit://file/')) {
+        handler = filesystemResourceHandlers['replit://file/{path}'];
+      } else if (uri.startsWith('replit://directory/')) {
+        handler = filesystemResourceHandlers['replit://directory/{path}'];
+      } else if (uri === 'replit://watchers') {
+        handler = filesystemResourceHandlers['replit://watchers'];
+      }
+    }
 
     if (!handler) {
       throw new Error(`No handler found for resource: ${uri}`);
@@ -89,7 +105,7 @@ export async function createServer(): Promise<Server> {
 
     try {
       // Call the handler
-      const result = await handler(new URL(uri));
+      const result = await handler(url);
 
       // Log resource access
       logger.debug(`Resource accessed: ${uri}`, {
@@ -104,8 +120,8 @@ export async function createServer(): Promise<Server> {
   });
 
   logger.info('MCP Server configured successfully', {
-    tools: authTools.map(t => t.name),
-    resources: authResources.map(r => r.uri),
+    tools: [...authTools, ...filesystemTools].map(t => t.name),
+    resources: [...authResources, ...filesystemResources].map(r => r.uri),
     authMethod: 'JWT Token (Environment Variable)'
   });
 

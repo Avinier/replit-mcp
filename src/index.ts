@@ -1,16 +1,12 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+/**
+ * Replit MCP Server - Main Entry Point
+ * Bridges Cursor IDE with Replit's ecosystem through the Model Context Protocol
+ */
 
-const NWS_API_BASE = "https://api.weather.gov";
-const USER_AGENT = "weather-app/1.0";
+import { startServer } from './server.js';
 
-// Create server instance
-const server = new McpServer({
-  name: "weather",
-  version: "1.0.0",
-  capabilities: {
-    resources: {},
-    tools: {},
-  },
+// Start the server
+startServer().catch((error) => {
+  console.error('Failed to start Replit MCP Server:', error);
+  process.exit(1);
 });

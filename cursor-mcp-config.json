@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "replit": {
+      "command": "node",
+      "args": ["/Users/avinier/UpsurgeLabs/replit-mcp-assignment/build/index.js"],
+      "env": {
+        "REPLIT_CLIENT_ID": "your_client_id_here",
+        "REPLIT_CLIENT_SECRET": "your_client_secret_here",
+        "NODE_ENV": "development"
+      }
+    }
+  }
+}

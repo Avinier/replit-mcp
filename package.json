@@ -1,15 +1,25 @@
 {
-  "name": "replit-mcp-assignment",
+  "name": "replit-mcp-server",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Replit Extensions MCP server for Cursor IDE integration",
+  "main": "build/index.js",
   "scripts": {
     "build": "tsc && chmod 755 build/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsc --watch",
+    "start": "node build/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "clean": "rm -rf build"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "replit",
+    "cursor",
+    "ai",
+    "extensions",
+    "model-context-protocol"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.0",
     "@replit/extensions": "^1.10.0",
@@ -21,7 +31,7 @@
   },
   "type": "module",
   "bin": {
-    "weather": "./build/index.js"
+    "replit-mcp": "./build/index.js"
   },
   "files": [
     "build"

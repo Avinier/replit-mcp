@@ -13,6 +13,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { authTools, authToolHandlers } from './tools/auth.js';
 import { filesystemTools, filesystemToolHandlers } from './tools/filesystem.js';
+import { commandToolHandlers } from './tools/command-handlers.js';
+import { commandTools } from './tools/commands.js';
 import { authResources, authResourceHandlers } from './resources/auth.js';
 import { filesystemResources, filesystemResourceHandlers } from './resources/filesystem.js';
 import { logger } from './utils/logger.js';
@@ -40,7 +42,7 @@ export async function createServer(): Promise<Server> {
   // Register tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [...authTools, ...filesystemTools].map(tool => ({
+      tools: [...authTools, ...filesystemTools, ...commandTools].map(tool => ({
         name: tool.name,
         description: tool.description || '',
         inputSchema: tool.inputSchema
@@ -52,7 +54,7 @@ export async function createServer(): Promise<Server> {
     const toolName = request.params.name;
     const args = request.params.arguments || {};
 
-    const handler = (authToolHandlers as any)[toolName] || (filesystemToolHandlers as any)[toolName];
+    const handler = (authToolHandlers as any)[toolName] || (filesystemToolHandlers as any)[toolName] || (commandToolHandlers as any)[toolName];
     if (!handler) {
       throw new Error(`No handler found for tool: ${toolName}`);
     }
@@ -120,7 +122,7 @@ export async function createServer(): Promise<Server> {
   });
 
   logger.info('MCP Server configured successfully', {
-    tools: [...authTools, ...filesystemTools].map(t => t.name),
+    tools: [...authTools, ...filesystemTools, ...commandTools].map(t => t.name),
     resources: [...authResources, ...filesystemResources].map(r => r.uri),
     authMethod: 'JWT Token (Environment Variable)'
   });

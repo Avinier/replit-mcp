@@ -15,8 +15,11 @@ import { authTools, authToolHandlers } from './tools/auth.js';
 import { filesystemTools, filesystemToolHandlers } from './tools/filesystem.js';
 import { commandToolHandlers } from './tools/command-handlers.js';
 import { commandTools } from './tools/commands.js';
+import { replDbTools } from './tools/repldb.js';
+import { replDbToolHandlers } from './tools/repldb-handlers.js';
 import { authResources, authResourceHandlers } from './resources/auth.js';
 import { filesystemResources, filesystemResourceHandlers } from './resources/filesystem.js';
+import { replDbResources, replDbResourceHandlers } from './resources/repldb.js';
 import { logger } from './utils/logger.js';
 
 /**
@@ -42,7 +45,7 @@ export async function createServer(): Promise<Server> {
   // Register tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [...authTools, ...filesystemTools, ...commandTools].map(tool => ({
+      tools: [...authTools, ...filesystemTools, ...commandTools, ...replDbTools].map(tool => ({
         name: tool.name,
         description: tool.description || '',
         inputSchema: tool.inputSchema
@@ -54,7 +57,7 @@ export async function createServer(): Promise<Server> {
     const toolName = request.params.name;
     const args = request.params.arguments || {};
 
-    const handler = (authToolHandlers as any)[toolName] || (filesystemToolHandlers as any)[toolName] || (commandToolHandlers as any)[toolName];
+    const handler = (authToolHandlers as any)[toolName] || (filesystemToolHandlers as any)[toolName] || (commandToolHandlers as any)[toolName] || (replDbToolHandlers as any)[toolName];
     if (!handler) {
       throw new Error(`No handler found for tool: ${toolName}`);
     }
@@ -79,7 +82,7 @@ export async function createServer(): Promise<Server> {
   // Register resources
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
     return {
-      resources: [...authResources, ...filesystemResources]
+      resources: [...authResources, ...filesystemResources, ...replDbResources]
     };
   });
 
@@ -98,6 +101,18 @@ export async function createServer(): Promise<Server> {
         handler = filesystemResourceHandlers['replit://directory/{path}'];
       } else if (uri === 'replit://watchers') {
         handler = filesystemResourceHandlers['replit://watchers'];
+      } else if (uri.startsWith('replit://db')) {
+        // Check ReplDB resources
+        if (uri.startsWith('replit://db/') && uri.split('/').length > 3) {
+          // Format: replit://db/{namespace}/{key}
+          handler = replDbResourceHandlers['replit://db/{namespace}/{key}'];
+        } else if (uri.startsWith('replit://db/') && uri.split('/').length === 3) {
+          // Format: replit://db/{namespace}
+          handler = replDbResourceHandlers['replit://db/{namespace}'];
+        } else if (uri === 'replit://db') {
+          // Root ReplDB resource
+          handler = replDbResourceHandlers['replit://db'];
+        }
       }
     }
 
@@ -122,8 +137,8 @@ export async function createServer(): Promise<Server> {
   });
 
   logger.info('MCP Server configured successfully', {
-    tools: [...authTools, ...filesystemTools, ...commandTools].map(t => t.name),
-    resources: [...authResources, ...filesystemResources].map(r => r.uri),
+    tools: [...authTools, ...filesystemTools, ...commandTools, ...replDbTools].map(t => t.name),
+    resources: [...authResources, ...filesystemResources, ...replDbResources].map(r => r.uri),
     authMethod: 'JWT Token (Environment Variable)'
   });
 

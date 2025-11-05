@@ -41,6 +41,30 @@ function parseSafeInt(value: string | number, fieldName: string): number {
 }
 
 /**
+ * Safely handle installation ID which can be a UUID string
+ */
+function parseInstallationId(value: string | number | undefined): AuthenticatedInstallation | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  // If it's a UUID string, just return it as-is (we won't parse as integer)
+  if (typeof value === 'string' && value.includes('-')) {
+    // For now, we'll skip installation ID if it's a UUID
+    // In the future, we might want to handle this differently
+    return undefined;
+  }
+
+  // Try to parse as integer
+  try {
+    const id = parseSafeInt(value, 'installation ID');
+    return { id };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Get JWT token from environment
  */
 function getJWTFromEnv(): string {
@@ -64,7 +88,28 @@ function getJWTFromEnv(): string {
  */
 function decodeJWT(token: string): any {
   try {
-    return jwt.decode(token, { complete: true });
+    // First try standard JWT decode
+    const decoded = jwt.decode(token, { complete: true });
+    if (decoded) {
+      return decoded;
+    }
+
+    // Handle Replit's local JWT format where the signature is plain text
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      throw new TokenError('Invalid JWT format: must have 3 parts');
+    }
+
+    // Decode header and payload
+    const header = JSON.parse(Buffer.from(parts[0], 'base64').toString());
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+
+    // Return in the same format as jwt.decode
+    return {
+      header,
+      payload,
+      signature: parts[2]
+    };
   } catch (error) {
     throw new TokenError('Failed to decode JWT token', {
       originalError: error
@@ -96,17 +141,21 @@ async function verifyJWT(token: string): Promise<VerifyTokenResult> {
       });
     }
 
+    // Handle Replit's local JWT format
+    // Map Replit's fields to standard JWT claims
+    const standardPayload = {
+      sub: payload.userId?.toString() || payload.sub,
+      iat: payload.iat || Math.floor(Date.now() / 1000),
+      exp: payload.exp || (Math.floor(Date.now() / 1000) + 3600), // Default 1 hour if not present
+      iss: payload.iss || payload.origin || 'replit',
+      aud: payload.aud || 'replit_api',
+      scope: payload.scope || 'read write'
+    };
+
     return {
-      payload: {
-        sub: payload.sub,
-        iat: payload.iat,
-        exp: payload.exp,
-        iss: payload.iss,
-        aud: payload.aud,
-        scope: payload.scope
-      },
+      payload: standardPayload,
       protectedHeader: {
-        alg: header.alg || 'HS256',
+        alg: header.alg || 'none',
         typ: header.typ || 'JWT',
         kid: header.kid
       }
@@ -136,25 +185,21 @@ export async function authenticate(options?: AuthOptions): Promise<AuthenticateR
     const payload = decoded.payload as any;
 
     // Extract user info from token
-    const userId = payload.sub || payload.user_id;
+    // Handle Replit's local JWT format
+    const userId = payload.userId || payload.sub || payload.user_id;
     if (!userId) {
-      throw new AuthenticationError('JWT token missing user ID (sub claim)');
+      throw new AuthenticationError('JWT token missing user ID');
     }
 
     // Create user object
     const user: AuthenticatedUser = {
       id: parseSafeInt(userId, 'user ID'),
       username: payload.username || payload.preferred_username,
-      displayName: payload.display_name || payload.name
+      displayName: payload.displayName || payload.display_name || payload.name
     };
 
     // Installation info might be in different fields
-    let installation: AuthenticatedInstallation | undefined = undefined;
-    if (payload.installation_id) {
-      installation = {
-        id: parseSafeInt(payload.installation_id, 'installation ID')
-      };
-    }
+    const installation = parseInstallationId(payload.installationId || payload.installation_id);
 
     logger.info('Authentication successful', {
       userId: user.id,
@@ -354,7 +399,7 @@ export async function getUserFromToken(): Promise<AuthenticateResult['user'] | n
     const decoded = decodeJWT(token);
     const payload = decoded.payload as any;
 
-    const userId = payload.sub || payload.user_id;
+    const userId = payload.userId || payload.sub || payload.user_id;
     if (!userId) {
       return null;
     }
@@ -362,7 +407,7 @@ export async function getUserFromToken(): Promise<AuthenticateResult['user'] | n
     return {
       id: parseSafeInt(userId, 'user ID'),
       username: payload.username || payload.preferred_username,
-      displayName: payload.display_name || payload.name
+      displayName: payload.displayName || payload.display_name || payload.name
     };
   } catch (error) {
     logger.debug('Failed to get user from token', { error: (error as Error).message });

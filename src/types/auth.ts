@@ -4,6 +4,8 @@
 
 export interface AuthenticatedUser {
   id: number;
+  username?: string;
+  displayName?: string;
 }
 
 export interface AuthenticatedInstallation {
@@ -11,7 +13,7 @@ export interface AuthenticatedInstallation {
 }
 
 export interface AuthenticateResult {
-  installation: AuthenticatedInstallation;
+  installation?: AuthenticatedInstallation;
   user: AuthenticatedUser;
 }
 

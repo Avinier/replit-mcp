@@ -23,9 +23,11 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.0",
     "@replit/extensions": "^1.10.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^24.10.0",
     "typescript": "^5.9.3"
   },

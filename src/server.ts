@@ -1,5 +1,5 @@
 /**
- * MCP Server Configuration for Replit Extensions
+ * MCP Server Configuration for Replit Extensions (JWT-based)
  * Configures the MCP server with tools, resources, and capabilities
  */
 
@@ -11,7 +11,6 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import { initializeExtensions } from './replit/index.js';
 import { authTools, authToolHandlers } from './tools/index.js';
 import { authResources, authResourceHandlers } from './resources/index.js';
 import { logger } from './utils/logger.js';
@@ -20,18 +19,7 @@ import { logger } from './utils/logger.js';
  * Create and configure the MCP server
  */
 export async function createServer(): Promise<Server> {
-  // Initialize Replit Extensions
-  try {
-    await initializeExtensions({
-      auth: {
-        clientId: process.env.REPLIT_CLIENT_ID,
-        clientSecret: process.env.REPLIT_CLIENT_SECRET,
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to initialize Replit Extensions, server will start without them', error as Error);
-    // Continue anyway - tools will handle initialization failures
-  }
+  logger.info('Creating Replit MCP Server (JWT-based authentication)');
 
   // Create MCP server instance
   const server = new Server(
@@ -117,7 +105,8 @@ export async function createServer(): Promise<Server> {
 
   logger.info('MCP Server configured successfully', {
     tools: authTools.map(t => t.name),
-    resources: authResources.map(r => r.uri)
+    resources: authResources.map(r => r.uri),
+    authMethod: 'JWT Token (Environment Variable)'
   });
 
   return server;
@@ -137,6 +126,7 @@ export async function startServer(): Promise<void> {
     await server.connect(transport);
 
     logger.info('Replit MCP Server started and listening on stdio');
+    logger.info('Using JWT-based authentication from REPLIT_JWT_TOKEN environment variable');
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {

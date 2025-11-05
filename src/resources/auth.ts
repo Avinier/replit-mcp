@@ -145,8 +145,8 @@ export const authResourceHandlers = {
           isExpired: state.expiresAt ? state.expiresAt < Math.floor(Date.now() / 1000) : null
         } : {
           hasToken: false
-        },
-        };
+        }
+      };
 
       return {
         contents: [{

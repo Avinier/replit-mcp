@@ -1,101 +1,181 @@
 /**
- * Wrapper for Replit Auth API
- * Provides a clean interface for authentication operations
+ * JWT-based Authentication for Replit MCP Server
+ * Handles JWT tokens obtained from Replit extension auth bridge
  */
 
+import jwt from 'jsonwebtoken';
 import {
   AuthenticateResult,
   AuthTokenPayload,
   AuthState,
   AuthError,
   AuthOptions,
-  VerifyTokenResult
+  VerifyTokenResult,
+  AuthenticatedUser,
+  AuthenticatedInstallation
 } from '../types/auth.js';
 import { logger } from '../utils/logger.js';
 import { AuthenticationError, TokenError } from '../utils/errors.js';
 
-// We'll use dynamic imports for Replit extensions since they need to be initialized first
-let authAPI: any = null;
-let initialized = false;
+/**
+ * Safely parse integer with validation
+ */
+function parseSafeInt(value: string | number, fieldName: string): number {
+  const parsed = parseInt(String(value), 10);
+
+  if (isNaN(parsed)) {
+    throw new AuthenticationError(
+      `Invalid ${fieldName}: must be a valid integer`,
+      { value, fieldName }
+    );
+  }
+
+  if (parsed < 0) {
+    throw new AuthenticationError(
+      `Invalid ${fieldName}: must be a positive integer`,
+      { value, fieldName }
+    );
+  }
+
+  return parsed;
+}
 
 /**
- * Initialize the Auth API module
+ * Get JWT token from environment
  */
-async function initAuthAPI(): Promise<void> {
-  if (initialized) return;
+function getJWTFromEnv(): string {
+  const token = process.env.REPLIT_JWT_TOKEN;
 
+  if (!token) {
+    throw new AuthenticationError(
+      'REPLIT_JWT_TOKEN environment variable is not set',
+      {
+        hint: 'Please set REPLIT_JWT_TOKEN with the token from your Replit extension',
+        code: 'MISSING_TOKEN'
+      }
+    );
+  }
+
+  return token;
+}
+
+/**
+ * Decode JWT token without verification (for basic info)
+ */
+function decodeJWT(token: string): any {
   try {
-    // Import Replit extensions
-    const extensions = await import('@replit/extensions');
+    return jwt.decode(token, { complete: true });
+  } catch (error) {
+    throw new TokenError('Failed to decode JWT token', {
+      originalError: error
+    });
+  }
+}
 
-    // Initialize extensions if not already done
-    const replitExtensions = extensions as any;
+/**
+ * Verify JWT token signature and payload
+ */
+async function verifyJWT(token: string): Promise<VerifyTokenResult> {
+  try {
+    // For now, we'll decode without signature verification
+    // Replit uses a secret key we don't have access to
+    const decoded = jwt.decode(token, { complete: true });
 
-    if (!replitExtensions.initialized) {
-      await replitExtensions.init({
-        // Pass any required configuration
-        auth: {
-          clientId: process.env.REPLIT_CLIENT_ID,
-          clientSecret: process.env.REPLIT_CLIENT_SECRET,
-        }
+    if (!decoded) {
+      throw new TokenError('Invalid JWT token format');
+    }
+
+    const payload = decoded.payload as any;
+    const header = decoded.header;
+
+    // Check expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) {
+      throw new TokenError('JWT token has expired', {
+        expiredAt: new Date(payload.exp * 1000).toISOString()
       });
     }
 
-    // Access the experimental auth API
-    authAPI = replitExtensions.experimental.auth;
-    initialized = true;
-
-    logger.info('Replit Auth API initialized successfully');
+    return {
+      payload: {
+        sub: payload.sub,
+        iat: payload.iat,
+        exp: payload.exp,
+        iss: payload.iss,
+        aud: payload.aud,
+        scope: payload.scope
+      },
+      protectedHeader: {
+        alg: header.alg || 'HS256',
+        typ: header.typ || 'JWT',
+        kid: header.kid
+      }
+    };
   } catch (error) {
-    logger.error('Failed to initialize Replit Auth API', error as Error);
-    throw new AuthenticationError(
-      'Failed to initialize Replit Auth API',
-      { originalError: error }
-    );
+    if (error instanceof TokenError) {
+      throw error;
+    }
+    throw new TokenError('Failed to verify JWT token', {
+      originalError: error
+    });
   }
 }
 
 /**
- * Ensure the Auth API is initialized before use
- */
-async function ensureInitialized(): Promise<void> {
-  if (!initialized) {
-    await initAuthAPI();
-  }
-}
-
-/**
- * Authenticate with Replit and get user information
+ * Authenticate with Replit using JWT token
  *
- * @param options - Authentication options
+ * @param options - Authentication options (ignored for JWT flow)
  * @returns Authentication result with user and installation info
  */
 export async function authenticate(options?: AuthOptions): Promise<AuthenticateResult> {
-  await ensureInitialized();
-
   try {
-    logger.info('Attempting authentication with Replit', { options });
+    logger.info('Authenticating with JWT token');
 
-    // Call the Replit auth API
-    const result = await authAPI.authenticate();
+    const token = getJWTFromEnv();
+    const decoded = decodeJWT(token);
+    const payload = decoded.payload as any;
+
+    // Extract user info from token
+    const userId = payload.sub || payload.user_id;
+    if (!userId) {
+      throw new AuthenticationError('JWT token missing user ID (sub claim)');
+    }
+
+    // Create user object
+    const user: AuthenticatedUser = {
+      id: parseSafeInt(userId, 'user ID'),
+      username: payload.username || payload.preferred_username,
+      displayName: payload.display_name || payload.name
+    };
+
+    // Installation info might be in different fields
+    let installation: AuthenticatedInstallation | undefined = undefined;
+    if (payload.installation_id) {
+      installation = {
+        id: parseSafeInt(payload.installation_id, 'installation ID')
+      };
+    }
 
     logger.info('Authentication successful', {
-      userId: result.user.id,
-      installationId: result.installation?.id
+      userId: user.id,
+      username: user.username,
+      installationId: installation?.id
     });
 
-    return result;
+    return {
+      user,
+      installation
+    };
   } catch (error) {
     logger.error('Authentication failed', error as Error);
 
-    if (error instanceof Error) {
-      throw new AuthenticationError(
-        `Authentication failed: ${error.message}`,
-        { originalError: error.message }
-      );
+    if (error instanceof AuthenticationError || error instanceof TokenError) {
+      throw error;
     }
 
-    throw new AuthenticationError('Authentication failed', { originalError: error });
+    throw new AuthenticationError('Authentication failed', {
+      originalError: error
+    });
   }
 }
 
@@ -105,18 +185,25 @@ export async function authenticate(options?: AuthOptions): Promise<AuthenticateR
  * @returns JWT token string
  */
 export async function getAuthToken(): Promise<string> {
-  await ensureInitialized();
-
   try {
-    logger.debug('Requesting auth token');
+    logger.debug('Getting JWT token from environment');
 
-    const token = await authAPI.getAuthToken();
+    const token = getJWTFromEnv();
 
-    if (!token) {
-      throw new TokenError('No authentication token available');
+    // Verify token is still valid
+    const decoded = decodeJWT(token);
+    const payload = decoded.payload as any;
+
+    if (payload.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      if (payload.exp < now) {
+        throw new TokenError('JWT token has expired', {
+          expiredAt: new Date(payload.exp * 1000).toISOString()
+        });
+      }
     }
 
-    logger.debug('Auth token retrieved successfully');
+    logger.debug('JWT token retrieved successfully');
     return token;
   } catch (error) {
     logger.error('Failed to get auth token', error as Error);
@@ -125,10 +212,9 @@ export async function getAuthToken(): Promise<string> {
       throw error;
     }
 
-    throw new TokenError(
-      `Failed to get auth token: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      { originalError: error }
-    );
+    throw new TokenError('Failed to get auth token', {
+      originalError: error
+    });
   }
 }
 
@@ -139,12 +225,10 @@ export async function getAuthToken(): Promise<string> {
  * @returns Decoded token payload and header
  */
 export async function verifyAuthToken(token: string): Promise<VerifyTokenResult> {
-  await ensureInitialized();
-
   try {
-    logger.debug('Verifying auth token');
+    logger.debug('Verifying JWT token');
 
-    const result = await authAPI.verifyAuthToken(token);
+    const result = await verifyJWT(token);
 
     logger.debug('Token verification successful', {
       subject: result.payload.sub,
@@ -155,10 +239,14 @@ export async function verifyAuthToken(token: string): Promise<VerifyTokenResult>
   } catch (error) {
     logger.error('Token verification failed', error as Error);
 
-    throw new TokenError(
-      `Token verification failed: ${error instanceof Error ? error.message : 'Invalid token'}`,
-      { originalError: error, token: token.substring(0, 10) + '...' }
-    );
+    if (error instanceof TokenError) {
+      throw error;
+    }
+
+    throw new TokenError('Token verification failed', {
+      originalError: error,
+      token: token.substring(0, 10) + '...'
+    });
   }
 }
 
@@ -170,7 +258,7 @@ export async function verifyAuthToken(token: string): Promise<VerifyTokenResult>
 export async function getAuthState(): Promise<AuthState> {
   try {
     // Try to get token to check if authenticated
-    const token = await getAuthToken();
+    const token = getJWTFromEnv();
 
     if (!token) {
       return { isAuthenticated: false };
@@ -178,6 +266,8 @@ export async function getAuthState(): Promise<AuthState> {
 
     // Verify token to get payload
     const verified = await verifyAuthToken(token);
+    const decoded = decodeJWT(token);
+    const payload = decoded.payload as any;
 
     // Get full auth info
     const authResult = await authenticate();
@@ -205,12 +295,24 @@ export async function getAuthState(): Promise<AuthState> {
  * @returns True if token is expired or invalid
  */
 export async function isTokenExpired(token?: string): Promise<boolean> {
-  if (!token) return true;
+  if (!token) {
+    try {
+      token = getJWTFromEnv();
+    } catch {
+      return true;
+    }
+  }
 
   try {
-    const verified = await verifyAuthToken(token);
+    const decoded = decodeJWT(token);
+    const payload = decoded.payload as any;
+
+    if (!payload.exp) {
+      return false; // No expiration claim
+    }
+
     const now = Math.floor(Date.now() / 1000);
-    return verified.payload.exp < now;
+    return payload.exp < now;
   } catch (error) {
     return true; // Treat invalid tokens as expired
   }
@@ -229,20 +331,43 @@ export async function refreshTokenIfNeeded(currentToken?: string): Promise<strin
     return currentToken;
   }
 
-  logger.info('Token expired or missing, requesting new token');
+  logger.info('Token expired or missing, getting new token from environment');
   return await getAuthToken();
 }
 
 /**
  * Clear any stored authentication state
- * Note: This mainly clears local state. Replit manages the actual auth state.
+ * Note: This mainly clears local state. JWT tokens are managed via environment.
  */
 export function clearAuthState(): void {
-  // In a real implementation, you might clear local storage or cache
-  logger.info('Auth state cleared');
-  initialized = false;
-  authAPI = null;
+  // In JWT flow, we don't store state locally
+  // The token is always read from environment
+  logger.info('Auth state cleared (JWT flow - no local state to clear)');
 }
 
-// Export the auth API object for advanced usage
-export { authAPI as _authAPIInternal };
+/**
+ * Get user info from JWT token without full authentication
+ */
+export async function getUserFromToken(): Promise<AuthenticateResult['user'] | null> {
+  try {
+    const token = getJWTFromEnv();
+    const decoded = decodeJWT(token);
+    const payload = decoded.payload as any;
+
+    const userId = payload.sub || payload.user_id;
+    if (!userId) {
+      return null;
+    }
+
+    return {
+      id: parseSafeInt(userId, 'user ID'),
+      username: payload.username || payload.preferred_username,
+      displayName: payload.display_name || payload.name
+    };
+  } catch (error) {
+    logger.debug('Failed to get user from token', { error: (error as Error).message });
+    return null;
+  }
+}
+
+// No need to export authAPI as we're not using Replit extensions

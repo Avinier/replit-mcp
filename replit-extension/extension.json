@@ -1,0 +1,22 @@
+{
+  "name": "replit-mcp-bridge",
+  "description": "Bridge Replit Extension APIs to MCP server running outside Replit",
+  "version": "1.0.0",
+  "author": "Your Name",
+  "license": "MIT",
+  "entry": "main.js",
+  "permissions": [
+    "auth",
+    "data",
+    "fs",
+    "repldb",
+    "messages",
+    "exec",
+    "debug",
+    "commands",
+    "me"
+  ],
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}

@@ -699,6 +699,150 @@ Add to Cursor's settings.json:
    - Use Cmd+Shift+P to access MCP tools
    - Check "MCP" panel for available tools/resources
 
+## WebSocket Bridge Architecture
+
+### Overview
+
+Since MCP servers run in a separate process from Replit Extensions, we need a bridge to enable communication between Claude (via MCP) and the Replit Extension APIs. The solution uses a WebSocket connection to bridge the gap between the MCP server and the Replit extension.
+
+### Configuration
+
+Add to Cursor's settings.json:
+
+```json
+{
+  "mcpServers": {
+    "replit-bridge": {
+      "command": "node",
+      "args": ["~/mcp-replit-bridge/server.js"],
+      "env": {
+        "BRIDGE_PORT": "8765",
+        "BRIDGE_SECRET": "optional-shared-secret"
+      }
+    }
+  }
+}
+```
+
+### The Complete Flow (Step by Step)
+
+#### Setup Phase:
+1. User installs your Replit Extension in their workspace
+2. User adds your MCP server to their Claude config
+3. User starts Claude, which launches your MCP server
+4. MCP server starts WebSocket server on port 8765
+5. Extension detects the server and connects
+6. Extension sends JWT token for verification
+7. Connection established ✓
+
+#### When Claude Needs to Do Something:
+
+**Example: "Read the contents of index.js"**
+
+1. **Claude** → MCP Client: Invokes tool `replit_read_file` with path="index.js"
+2. **MCP Client** → Your MCP Server: Sends tool call via stdio
+3. **Your MCP Server**:
+   - Receives the request
+   - Checks if extension is connected
+   - Sends WebSocket message: `{"id": "req-123", "action": "readFile", "path": "index.js"}`
+4. **Replit Extension**:
+   - Receives WebSocket message
+   - Calls Replit's `fs.readFile("index.js")`
+   - Gets file content
+   - Sends back: `{"id": "req-123", "success": true, "content": "console.log('hello')"}`
+5. **Your MCP Server**:
+   - Receives response
+   - Returns to Claude via MCP protocol
+6. **Claude**: Gets the file content and can now reason about it
+
+### Critical Design Decisions
+
+#### Connection Direction
+**Extension → Server (Recommended)**
+- Extension initiates the WebSocket connection to localhost
+- Easier to set up (no firewall issues)
+- Extension can reconnect if connection drops
+
+#### Security Considerations
+**Problem**: Anyone could connect to your WebSocket server
+
+**Solutions**:
+- Use the JWT token from Replit's `auth.getAuthToken()` to verify it's a real extension
+- Use a shared secret in environment variables
+- Only accept connections from localhost
+- Implement request signing
+
+#### Handling Multiple Workspaces
+Your server could maintain a map:
+```
+connections = {
+  "workspace-id-1": websocket1,
+  "workspace-id-2": websocket2
+}
+```
+
+Then Claude could specify which workspace to target, or you could default to "most recently active."
+
+#### Error Handling
+**If extension disconnects:**
+- MCP server should return clear error: "Replit extension not connected"
+- Claude can inform user to open Replit and reload extension
+
+**If command fails:**
+- Extension sends error response
+- MCP server formats it nicely
+- Claude sees the actual Replit error message
+
+### Development Workflow Challenges
+
+#### The Chicken-and-Egg Problem:
+- MCP server needs extension to be running
+- Extension needs MCP server to be running
+- User needs to have both active simultaneously
+
+**Solution**:
+- Make extension auto-connect with retry logic
+- MCP server should handle "extension not connected" gracefully
+- Provide clear setup instructions
+
+### Alternative: Public Proxy (Advanced)
+
+If localhost WebSocket is too restrictive, you could:
+
+1. Deploy a **proxy service** (on Railway, Fly.io, etc.)
+2. Extension connects to `wss://your-proxy.com/connect`
+3. MCP server connects to `wss://your-proxy.com/mcp-client`
+4. Proxy routes messages between them
+5. Use authentication tokens for security
+
+This allows the extension and MCP server to be anywhere, but adds complexity and security concerns.
+
+### Code Overview (Conceptual Structure)
+
+#### MCP Server Structure:
+```
+mcp-replit-bridge/
+├── server.js              # Main MCP server (stdio)
+├── websocket-server.js    # WebSocket server for extensions
+├── command-handler.js     # Translates MCP → Extension commands
+└── tools/
+    ├── read-file.js
+    ├── write-file.js
+    └── run-command.js
+```
+
+#### Replit Extension Structure:
+```
+replit-mcp-extension/
+├── extension.json         # Extension manifest
+├── main.js               # Extension entry point
+├── bridge-client.js      # WebSocket client
+└── handlers/
+    ├── filesystem.js     # File operations
+    ├── commands.js       # Shell commands
+    └── workspace.js      # Workspace info
+```
+
 ## Implementation Strategy
 
 ### MVP (Phase 1)
@@ -706,6 +850,7 @@ Add to Cursor's settings.json:
 - Core file operations (read, write, list) as MCP tools
 - File resources with URI scheme `replit://file/...`
 - Simple notification system via Messages API
+- WebSocket bridge for communication with Replit extension
 
 ### Key Implementation Notes
 
@@ -803,6 +948,7 @@ Add to Cursor's settings.json:
 
 The server will be tested with Cursor's MCP client. Key test scenarios:
 - Connection and authentication flow
+- WebSocket bridge establishment with Replit extension
 - File operations across multiple Replits
 - Team collaboration features
 - Deployment workflows
@@ -810,16 +956,16 @@ The server will be tested with Cursor's MCP client. Key test scenarios:
 
 ## Configuration
 
-The MCP server will be configured in Cursor's settings:
+The MCP WebSocket bridge will be configured in Cursor's settings:
 ```json
 {
   "mcpServers": {
-    "replit": {
+    "replit-bridge": {
       "command": "node",
-      "args": ["/path/to/replit-mcp-assignment/build/index.js"],
+      "args": ["~/mcp-replit-bridge/server.js"],
       "env": {
-        "REPLIT_CLIENT_ID": "your-client-id",
-        "REPLIT_CLIENT_SECRET": "your-client-secret"
+        "BRIDGE_PORT": "8765",
+        "BRIDGE_SECRET": "optional-shared-secret"
       }
     }
   }
@@ -828,11 +974,22 @@ The MCP server will be configured in Cursor's settings:
 
 ## Development Workflow
 
+### WebSocket Bridge Development:
+1. Create the MCP server with WebSocket support (`server.js`)
+2. Implement the WebSocket server for extension connections (`websocket-server.js`)
+3. Build command handlers to translate MCP calls to WebSocket messages
+4. Develop the Replit extension with WebSocket client
+5. Test the bridge connection and message passing
+
+### Full Workflow:
 1. Make changes to TypeScript files in `src/`
 2. Run `npm run build` to compile
-3. Test with Cursor's MCP client
-4. Use Replit Extension DevTools for debugging
-5. Implement features following the 7-phase user workflow
+3. Start the WebSocket bridge server
+4. Install and load the Replit extension
+5. Test with Cursor's MCP client
+6. Verify WebSocket communication between MCP server and extension
+7. Use Replit Extension DevTools for debugging
+8. Implement features following the 7-phase user workflow
 
 ## Important Considerations
 

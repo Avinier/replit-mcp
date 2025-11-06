@@ -1,13 +1,13 @@
 {
   "name": "replit-mcp-server",
   "version": "1.0.0",
-  "description": "Replit Extensions MCP server for Cursor IDE integration",
+  "description": "Replit MCP server with WebSocket bridge for Cursor IDE integration",
   "main": "build/index.js",
   "scripts": {
     "build": "tsc && chmod 755 build/index.js",
     "dev": "tsc --watch",
     "start": "node build/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:bridge": "node test-bridge.js",
     "clean": "rm -rf build"
   },
   "keywords": [
@@ -23,12 +23,14 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.0",
     "@replit/extensions": "^1.10.0",
-    "zod": "^3.25.76",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/jsonwebtoken": "^9.0.7",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.10.0",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   },
   "type": "module",

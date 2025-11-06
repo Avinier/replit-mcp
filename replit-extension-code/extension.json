@@ -1,0 +1,35 @@
+{
+  "name": "replit-mcp-bridge",
+  "description": "WebSocket bridge for Replit MCP server",
+  "icon": "./replit.svg",
+  "tools": [
+    {
+      "name": "replit-mcp-bridge",
+      "handler": "/",
+      "title": "MCP Bridge",
+      "icon": "./replit.svg"
+    }
+  ],
+  "scopes": [
+    {
+      "name": "read",
+      "reason": "Read files for MCP operations"
+    },
+    {
+      "name": "write-exec",
+      "reason": "Write files and execute commands"
+    },
+    {
+      "name": "repldb:read",
+      "reason": "Read from ReplDB"
+    },
+    {
+      "name": "repldb:write",
+      "reason": "Write to ReplDB"
+    },
+    {
+      "name": "experimental-api",
+      "reason": "Use experimental APIs"
+    }
+  ]
+}

@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "bridge": "node bridge.js"
+    "bridge": "node run-bridge.js"
   },
   "dependencies": {
     "@replit/extensions": "^1.10.0",

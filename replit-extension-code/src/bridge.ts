@@ -107,9 +107,10 @@ export class ReplitMCPServerBridge {
   }
 
   connect() {
-    const wsUrl = `ws://localhost:${process.env.BRIDGE_PORT || 8765}`;
+    // Use ngrok URL for remote connection from Replit
+    const wsUrl = `wss://5c920f0293a4.ngrok-free.app`;
     console.log(`🔌 Attempting to connect to MCP bridge at: ${wsUrl}`);
-    console.log(`🔧 BRIDGE_PORT from env: ${process.env.BRIDGE_PORT || '8765 (default)'}`);
+    console.log(`🌐 Using ngrok tunnel for remote access`);
 
     try {
       console.log('📡 Creating WebSocket connection...');

@@ -62,9 +62,9 @@ export class WebSocketServer {
     secure: boolean;
     req: IncomingMessage;
   }): Promise<boolean> {
-    // Only allow connections from localhost in development
+    // Allow connections from localhost and ngrok in development
     if (process.env.NODE_ENV !== 'production') {
-      const allowedOrigins = ['localhost', '127.0.0.1'];
+      const allowedOrigins = ['localhost', '127.0.0.1', 'ngrok-free.app'];
       const origin = info.req.headers.origin || '';
       const host = info.req.headers.host || '';
 
